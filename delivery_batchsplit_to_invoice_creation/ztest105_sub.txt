@@ -1,0 +1,454 @@
+*&---------------------------------------------------------------------*
+*& Include          ZTEST105_SUB
+*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*& Include          ZDELIVERY_BATCH_SPLIT_SUB
+*&---------------------------------------------------------------------*
+CLASS del_invc DEFINITION.
+  PUBLIC SECTION.
+    METHODS:cnct_sftp,
+      call_bapi,
+      btch_split,
+      updt_pck_qty,
+      updt_pgi,
+      invc_crtn,
+      upd_log IMPORTING im_log TYPE ty_log,
+      disply_alv.
+*          send_mail,
+*          send_xml.
+
+
+      endclass.
+*& Class (Implementation)
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+    CLASS del_invc IMPLEMENTATION.
+
+    METHOD cnct_sftp .
+
+      CALL METHOD cl_gui_frontend_services=>gui_upload
+        EXPORTING
+          filename                = p_file
+          filetype                = 'ASC'
+          has_field_separator     = abap_true
+        CHANGING
+          data_tab                = lt_data"lt_file1
+        EXCEPTIONS
+          file_open_error         = 1
+          file_read_error         = 2
+          no_batch                = 3
+          gui_refuse_filetransfer = 4
+          invalid_type            = 5
+          no_authority            = 6
+          unknown_error           = 7
+          bad_data_format         = 8
+          header_not_allowed      = 9
+          separator_not_allowed   = 10
+          header_too_long         = 11
+          unknown_dp_error        = 12
+          access_denied           = 13
+          dp_out_of_memory        = 14
+          disk_full               = 15
+          dp_timeout              = 16
+          not_supported_by_gui    = 17
+          error_no_gui            = 18
+          OTHERS                  = 19.
+      IF sy-subrc NE 0.
+        MESSAGE : 'Error in upload' TYPE 'E'.
+        RETURN.
+      ENDIF.
+
+      DATA lv_tmp TYPE string.
+*      LOOP AT  lt_file1 INTO DATA(ls_file1).
+*
+*        SPLIT ls_file1 AT ';' INTO ls_data-vbeln ls_data-kunnr ls_data-xblnr
+*              ls_data-posnr ls_data-matnr ls_data-lfimg ls_data-batch
+*              lv_tmp.
+*
+*        APPEND ls_data TO lt_data.
+*        CLEAR ls_data.
+*      ENDLOOP.
+      IF lt_data IS NOT INITIAL.
+        me->btch_split( ).
+
+      ENDIF.
+
+    ENDMETHOD.
+    METHOD btch_split .
+
+      DATA lv_prev_vbeln TYPE likp-vbeln VALUE ''.
+      DATA lv_prev_posnr TYPE vbap-posnr VALUE ''.
+      DATA lv_seq        TYPE i VALUE 0.
+      DATA lv_parent_pos TYPE vbap-posnr.
+
+      LOOP AT lt_data ASSIGNING FIELD-SYMBOL(<fs>).
+
+        IF lv_prev_vbeln IS INITIAL OR lv_prev_vbeln <> <fs>-vbeln.
+          lv_prev_vbeln = <fs>-vbeln.
+          lwa_delhdr-deliv_numb    = <fs>-vbeln.
+          lwa_delhdrctr-deliv_numb = <fs>-vbeln.
+          lv_vbeln = <fs>-vbeln.
+          ls_tech_control-upd_ind  = 'X'.
+          CLEAR lt_lips.
+          SELECT * FROM lips INTO TABLE @lt_lips WHERE vbeln = @lv_vbeln.
+          ENDIF.
+
+          IF lv_prev_posnr IS INITIAL OR lv_prev_posnr <> <fs>-posnr.
+            IF lt_delitem IS NOT INITIAL.
+              me->call_bapi( ).
+              lv_seq = 0.
+            ENDIF.
+          ENDIF.
+
+          " reset for new posnr
+          lv_prev_posnr = <fs>-posnr.
+          lv_parent_pos = <fs>-posnr.
+          "logic for 1 line batch split..
+          DATA(lv_itemno) = 0.
+          LOOP AT lt_data INTO DATA(ls_data_temp) WHERE vbeln = <fs>-vbeln AND posnr = <fs>-posnr.
+            lv_itemno = lv_itemno + 1.
+          ENDLOOP.
+          IF lv_itemno < 2.
+            CLEAR lwa_delitem.
+            APPEND VALUE #( deliv_numb = <fs>-vbeln deliv_item = <fs>-posnr dlv_qty = 0 ) TO lt_delitem.
+            CLEAR lwa_delitemctr.
+            APPEND VALUE #( deliv_numb = <fs>-vbeln deliv_item = <fs>-posnr chg_delqty = 'X'
+                            volume_flg = 'X' net_wt_flg = 'X' gross_wt_flg = 'X' ) TO lt_delitemctr.
+          ENDIF.
+          lv_seq = lv_seq + 1.
+          lv_uitem = |900{ <fs>-posnr }{ lv_seq }|.
+          DATA(ls_lips_row) = VALUE lips( ).
+          READ TABLE lt_lips INTO ls_lips_row WITH KEY vbeln = <fs>-vbeln posnr = <fs>-posnr.
+          CLEAR lwa_delitem.
+          APPEND VALUE #(
+          deliv_numb   = <fs>-vbeln
+          deliv_item   = lv_uitem
+          material     = condense( <fs>-matnr )
+          hieraritem   = <fs>-posnr  " parent position
+          usehieritm   = '1'
+          batch        = <fs>-batch
+          dlv_qty      = <fs>-lfimg
+          sales_unit   = ls_lips_row-meins
+          base_uom     = lwa_delitem-sales_unit
+          fact_unit_nom   = ls_lips_row-umvkz
+          fact_unit_denom = ls_lips_row-umvkn
+          pik_qty_wh_bu    = <fs>-lfimg
+          ) TO lt_delitem.
+          CLEAR lwa_delitemctr.
+          APPEND VALUE #(
+          deliv_numb = <fs>-vbeln
+          deliv_item = lv_uitem
+          chg_delqty = 'X'
+          volume_flg = 'X'
+          net_wt_flg = 'X'
+          gross_wt_flg = 'X'
+          ) TO lt_delitemctr.
+          <fs>-posnr = lv_uitem.
+          MODIFY lt_data FROM <fs> TRANSPORTING posnr.
+        ENDLOOP.
+        BREAK-POINT.
+        me->call_bapi( ).
+        lv_seq = 0.
+      ENDMETHOD.
+      METHOD upd_log .
+        APPEND VALUE #(
+        srno = ls_log-srno
+        doc_no = ls_log-doc_no
+        status = ls_log-status
+        msg    = ls_log-msg
+        ) TO gt_log.
+
+      ENDMETHOD.
+      METHOD call_bapi.
+
+        DATA ls_log TYPE ty_log.
+        CALL FUNCTION 'BAPI_OUTB_DELIVERY_CHANGE'
+          EXPORTING
+            header_data    = lwa_delhdr
+            header_control = lwa_delhdrctr
+            delivery       = lv_vbeln
+            techn_control  = ls_tech_control
+          TABLES
+            item_data      = lt_delitem    "make it global
+            item_control   = lt_delitemctr "global
+            return         = lt_return_c.
+
+        ls_log-doc_no = lv_vbeln.
+        ls_log-srno   = VALUE #( lt_delitem[ 1 ]-deliv_item OPTIONAL  )  .
+
+        READ TABLE lt_return_c INTO DATA(ls_ret2) WITH KEY type = sy-abcde+4(1).
+        IF sy-subrc = 0.
+          CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+          MESSAGE ID ls_ret2-id TYPE 'E' NUMBER ls_ret2-number INTO ls_log-msg.
+          IF ls_log-msg IS INITIAL AND ls_ret2-message IS INITIAL.
+            ls_log-msg   = 'Error While doing Batchsplit'.
+          ELSEIF ls_ret2-message IS NOT INITIAL.
+            ls_log-msg = ls_ret2-message.
+          ENDIF.
+          ls_log-status = 'Error'.
+        ELSE.
+          CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING wait = 'X'.
+          ls_log-msg = 'Batch split done'.
+          ls_log-status = 'OKAY'.
+        ENDIF.
+
+
+        me->upd_log( EXPORTING im_log = ls_log ).
+*     lv_seq = 0. do it  in method only
+
+      ENDMETHOD.
+      METHOD updt_pck_qty.
+
+        DATA: ls_vbkok TYPE vbkok,
+              ls_vbpok TYPE vbpok,
+              lt_vbpok TYPE STANDARD TABLE OF vbpok,
+              lt_prot  TYPE STANDARD TABLE OF prott.
+
+        LOOP AT lt_data ASSIGNING FIELD-SYMBOL(<fs_data>).
+          AT NEW posnr.
+            CLEAR  ls_vbkok.
+            ls_vbkok-vbeln_vl = <fs_data>-vbeln.
+            ls_vbkok-vbtyp_vl = 'A'.
+            ls_vbkok-vbeln = <fs_data>-vbeln.
+            ls_vbkok-kodat = sy-datum.
+            ls_vbkok-bolnr = <fs_data>-lfimg.
+
+          ENDAT.
+          "fill item at each
+          APPEND VALUE #(
+          vbeln_vl = <fs_data>-vbeln
+          vbeln = <fs_data>-vbeln
+          posnr_vl = <fs_data>-posnr
+          posnn    = <fs_data>-posnr
+          matnr = <fs_data>-matnr
+          charg = <fs_data>-batch
+          pikmg = <fs_data>-lfimg
+          lfimg = <fs_data>-lfimg
+          ) TO lt_vbpok.
+          " call bapi at end of
+          AT END OF posnr.
+            CALL FUNCTION 'SD_DELIVERY_UPDATE_PICKING'
+              EXPORTING
+                vbkok_wa               = ls_vbkok
+                if_error_messages_send = 'X'
+              TABLES
+                vbpok_tab              = lt_vbpok
+                prot                   = lt_prot.
+
+            ls_log-doc_no = <fs_data>-vbeln.
+            ls_log-srno   = <fs_data>-posnr." VALUE #( lt_delitem[ 1 ]-deliv_item OPTIONAL  )  .
+
+            IF lt_prot[] IS  INITIAL.
+              CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+                EXPORTING
+                  wait = 'X'.
+              ls_log-msg = 'Delivery(Pick Quantity) not updated'.
+              ls_log-status = 'Error'.
+            ELSE.
+              CALL FUNCTION 'Bapi_transaction_rollback'.
+              ls_log-msg = 'Delivery(Pick Quantity) updated'.
+              ls_log-status = 'Okay'.
+            ENDIF.
+            me->upd_log( EXPORTING im_log = ls_log ).
+          ENDAT.
+        ENDLOOP.
+      ENDMETHOD.
+
+      METHOD updt_pgi.
+
+        DATA: ls_pgi_vbkok TYPE  vbkok,
+              lt_pgi_vbkok TYPE TABLE OF vbkok, " OCCURS 0 WITH HEADER LINE
+              lt_error     TYPE TABLE OF prott.
+
+        DATA(ls_pgi) = VALUE #( lt_data[ 1 ] OPTIONAL ).
+        APPEND VALUE #(
+        vbeln_vl = ls_pgi-vbeln
+        vbtyp_vl = 'A'
+        vbeln    = ls_pgi-vbeln
+        kodat    = sy-datum
+        wabuc    = 'X'
+        ) TO lt_pgi_vbkok.
+        lv_delvery = ls_pgi-vbeln.
+        CALL FUNCTION 'WS_DELIVERY_UPDATE_2'
+          EXPORTING
+            vbkok_wa               = ls_pgi_vbkok
+            synchron               = 'X'
+            no_messages_update_1   = 'X'
+            commit                 = 'X'
+            delivery               = lv_delvery
+            update_picking         = 'X'
+            nicht_sperren_1        = 'X'
+            if_database_update_1   = '1'
+            if_error_messages_send = 'X'
+            if_bor_init            = 'X'
+          TABLES
+            prot                   = lt_error.
+
+        IF lt_error IS INITIAL.
+          CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+            EXPORTING
+              wait = 'X'.
+        ENDIF.
+      ENDMETHOD.
+      METHOD invc_crtn.
+
+        DATA: gv_del      TYPE likp-vbeln,
+              lv_salesdoc TYPE vbak-vbeln,
+              pgi_plant   TYPE lips-werks,
+              lv_tcode    LIKE sy-tcode.
+        DATA: it_bdcdata TYPE TABLE OF bdcdata,
+              wa_bdcdata TYPE bdcdata.
+        DATA: it_message TYPE TABLE OF bdcmsgcoll,
+              wa_message LIKE LINE OF it_message.
+        DATA p_mode TYPE ctu_params-dismode .
+        gv_del = '2345678'."lv_delvery.
+        pgi_plant = '3000'.
+        lv_tcode = 'VF01'.
+
+
+*************************************************::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+*  PERFORM bdc_dynpro      USING 'SAPMV60A' '0102'.
+        """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+        CLEAR wa_bdcdata.
+        wa_bdcdata-program  = 'SAPMV60A'.
+        wa_bdcdata-dynpro   = '0102'.
+        wa_bdcdata-dynbegin = 'X'.
+        APPEND wa_bdcdata TO it_bdcdata.
+        CLEAR wa_bdcdata.
+        """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+*  PERFORM bdc_field       USING 'BDC_CURSOR'
+*                                'KOMFK-VBELN(01)'.
+        """""""""""""""""""""""""""""""""""""""""""""""""""""""
+        wa_bdcdata-fnam = 'BDC_CURSOR'.
+        wa_bdcdata-fval = 'KOMFK-VBELN(01)'.
+        APPEND wa_bdcdata TO it_bdcdata.
+        CLEAR wa_bdcdata.
+        """""""""""""""""""""""""""""""""""""""""""""""""""""""
+*  PERFORM bdc_field       USING 'BDC_OKCODE'
+*                                '/00'.
+        """""""""""""""""""""""""""""""""""""""""""""""""""""""
+        wa_bdcdata-fnam = 'BDC_OKCODE'.
+        wa_bdcdata-fval =  '/00'.
+        APPEND wa_bdcdata TO it_bdcdata.
+        CLEAR wa_bdcdata.
+        """""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+*  PERFORM bdc_field       USING 'KOMFK-VBELN(01)'
+*                                 gv_del.
+        """""""""""""""""""""""""""""""""""""""""""""""""""""""
+        wa_bdcdata-fnam = 'KOMFK-VBELN(01)'.
+        wa_bdcdata-fval =   gv_del.
+        APPEND wa_bdcdata TO it_bdcdata.
+        CLEAR wa_bdcdata.
+        """""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+*  PERFORM bdc_dynpro      USING 'SAPMV60A' '0104'.
+
+        """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+        CLEAR wa_bdcdata.
+        wa_bdcdata-program  = 'SAPMV60A'.
+        wa_bdcdata-dynpro   =  '0104'.
+        wa_bdcdata-dynbegin = 'X'.
+        APPEND wa_bdcdata TO it_bdcdata.
+        CLEAR wa_bdcdata.
+        """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+*  PERFORM bdc_field       USING 'BDC_CURSOR'
+*                                'VBRK-FKART'.
+        """""""""""""""""""""""""""""""""""""""""""""""""""""""
+        wa_bdcdata-fnam = 'BDC_CURSOR'.
+        wa_bdcdata-fval =  'VBRK-FKART'.
+        APPEND wa_bdcdata TO it_bdcdata.
+        CLEAR wa_bdcdata.
+        """""""""""""""""""""""""""""""""""""""""""""""""""""""
+*
+*  PERFORM bdc_field       USING 'BDC_OKCODE'
+*                                '=SICH'.
+
+        """""""""""""""""""""""""""""""""""""""""""""""""""""""
+        wa_bdcdata-fnam = 'BDC_OKCODE'.
+        wa_bdcdata-fval =   '=SICH'.
+        APPEND wa_bdcdata TO it_bdcdata.
+        CLEAR wa_bdcdata.
+        """""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+
+*************************************************::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+        p_mode = 'N'.
+        CALL TRANSACTION 'VF01' USING it_bdcdata
+                                 MODE p_mode
+                                 UPDATE 'S'
+                                 MESSAGES INTO it_message.
+        WAIT UP TO 1 SECONDS.
+        IF sy-subrc EQ 0.
+    DATA lv_msg TYPE string.
+    SELECT SINGLE vbeln FROM vbrp INTO @DATA(lv_data)
+                         WHERE aubel = @lv_salesdoc
+                         AND vgbel = @gv_del.
+    IF sy-subrc EQ 0.
+       " Delvery - ' lv_delvery ' Changed and Invoice'  need if messgase provided
+      CONCATENATE lv_data 'Created sucessfully..' INTO lv_msg SEPARATED BY space.
+      ls_log-status = icon_okay.
+      ls_log-srno = lines( gt_log ) + 1.
+      ls_log-doc_no  = lv_data.
+      ls_log-msg = lv_msg.
+      APPEND ls_log TO gt_log.
+      SUBMIT zinvoice_send_xml WITH p_vbeln EQ lv_data AND RETURN.
+    ELSE.
+      " Delvery - ' lv_delvery ' Changed and Invoice'  need if messgase provided
+      READ TABLE it_message into data(ls_msg) with key msgtyp = 'E'.
+      IF sy-subrc = 0.
+        CALL FUNCTION 'FORMAT_MESSAGE'
+      EXPORTING
+        id         = ls_msg-msgid
+        lang       = sy-langu
+        no         = ls_msg-msgnr
+        v1         = ls_msg-msgv1
+        v2         = ls_msg-msgv2
+        v3         = ls_msg-msgv3
+        v4         = ls_msg-msgv4
+      IMPORTING
+        msg        = lv_msg
+      EXCEPTIONS
+        not_found  = 1
+        OTHERS     = 2.
+
+
+      ENDIF.
+      IF lv_msg is INITIAL.
+        CONCATENATE 'Error while creating invoice for ' lv_delvery  INTO lv_msg SEPARATED BY space.
+      ENDIF.
+      ls_log-status = icon_cancel.
+      ls_log-srno = lines( gt_log ) + 1.
+      ls_log-doc_no  = lv_data.
+      ls_log-msg = lv_msg.
+      APPEND ls_log to gt_log.
+
+    ENDIF.
+  ENDIF.
+        ENDMETHOD.
+
+        METHOD disply_alv.
+
+          CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+            EXPORTING
+              i_callback_program = sy-cprog
+              is_layout          = VALUE slis_layout_alv( zebra             = abap_true
+                                                          colwidth_optimize = abap_true )
+              it_fieldcat        = VALUE slis_t_fieldcat_alv( ( fieldname = 'STATUS'  seltext_m = 'STATUS'  icon = abap_true )
+                                                              ( fieldname = 'DOC_NO'  seltext_m = 'DOC_NO'  )
+                                                              ( fieldname = 'SRNO'  seltext_m = 'SRNO' )
+                                                              ( fieldname = 'MSG' seltext_m = 'MSG' ) )
+            TABLES
+              t_outtab           = gt_log
+            EXCEPTIONS
+              program_error      = 1
+              OTHERS             = 2.
+
+        ENDMETHOD.
+
+ENDCLASS.
+
+----------------------------------------------------------------------------------
+Extracted by Direct Download Enterprise version 1.3.1 - E.G.Mellodew. 1998-2005 UK. Sap Release 757

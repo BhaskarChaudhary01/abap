@@ -1,0 +1,45 @@
+*&---------------------------------------------------------------------*
+*& Include          ZTEST105_TOP
+*&---------------------------------------------------------------------*
+
+"Types for log
+TYPES:BEGIN OF ty_log,
+        srno   TYPE i,
+        doc_no TYPE string,
+        Status TYPE string,
+        msg    TYPE string,
+      END OF   ty_log,
+      BEGIN OF ty_data,
+        vbeln TYPE string,
+        kunnr TYPE string,
+        xblnr TYPE string,
+        posnr TYPE string,
+        matnr TYPE string,
+        lfimg TYPE string,
+        batch TYPE string,
+      END OF   ty_data.
+
+"internal tabel and work area needed.
+DATA: lwa_delhdr      TYPE bapiobdlvhdrchg,
+      lwa_delhdrctr   TYPE bapiobdlvhdrctrlchg,
+      lt_delitem      TYPE STANDARD TABLE OF bapiobdlvitemchg,
+      lwa_delitem     TYPE bapiobdlvitemchg,
+      lt_delitemctr   TYPE STANDARD TABLE OF bapiobdlvitemctrlchg,
+      lwa_delitemctr  TYPE bapiobdlvitemctrlchg,
+      lt_itemspl      TYPE STANDARD TABLE OF /spe/bapiobdlvitemchg,
+      lwa_itemspl     TYPE /spe/bapiobdlvitemchg,
+      lt_return_c     TYPE STANDARD TABLE OF bapiret2,
+      ls_tech_control LIKE bapidlvcontrol,
+      lv_vbeln        TYPE likp-vbeln,
+      lt_likp         TYPE STANDARD TABLE OF likp,
+      lt_lips         TYPE STANDARD TABLE OF lips,
+      ls_log          TYPE ty_log,
+      gt_log          TYPE STANDARD TABLE OF ty_log,
+      lv_uitem        TYPE string, "(Batch Line Item)
+      lt_data         TYPE STANDARD TABLE OF ty_data,
+      lt_file1        TYPE STANDARD TABLE OF string,
+      ls_data         TYPE ty_data.
+DATA lv_delvery TYPE likp-vbeln.
+
+----------------------------------------------------------------------------------
+Extracted by Direct Download Enterprise version 1.3.1 - E.G.Mellodew. 1998-2005 UK. Sap Release 757

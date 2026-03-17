@@ -1,0 +1,32 @@
+*&---------------------------------------------------------------------*
+*& Report ZTEST105
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT ztest105.
+
+INCLUDE: ZTEST105_top,"global data declaration
+         ZTEST105_scr,"screen elements
+         ZTEST105_sub."processing
+
+START-OF-SELECTION.
+
+  TRY.
+
+      DATA lo_obj TYPE REF TO del_invc.
+       CREATE OBJECT lo_obj.
+
+       lo_obj->cnct_sftp( ).
+       lo_obj->disply_alv( ).
+
+      MESSAGE'Seems Good' TYPE 'S'.
+    CATCH cx_root INTO DATA(lx_root).
+      WRITE lx_root->get_text( ).
+
+  ENDTRY.
+
+
+END-OF-SELECTION.
+
+----------------------------------------------------------------------------------
+Extracted by Direct Download Enterprise version 1.3.1 - E.G.Mellodew. 1998-2005 UK. Sap Release 757
