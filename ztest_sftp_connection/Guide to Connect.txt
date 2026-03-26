@@ -1,0 +1,7 @@
+GOTO to SM69 
+Create commod 
+Input OS commond as requirement like { SFTP  }
+Note- check tick for Additional Parameter 
+Create a program using FM {SXPG_COMMAND_EXECUTE}
+Note if you want to write data on server or any other operation that required more than 1 commond 
+so you have to use Batch file as used in code upload file sftp { https://github.com/BhaskarChaudhary01/abap/tree/main/uploaddata_via_sftp }
