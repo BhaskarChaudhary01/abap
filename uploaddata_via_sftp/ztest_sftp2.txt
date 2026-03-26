@@ -1,0 +1,114 @@
+REPORT ZTEST_SFTP2.
+
+DATA: lt_data       TYPE TABLE OF string,
+      lv_data_file  TYPE string VALUE '/tmp/test_sftp.txt',
+      lv_cmd_file   TYPE string VALUE '/tmp/sftp_batch.txt',
+      lv_temp_cmd   TYPE string.
+
+DATA: lv_cmd        TYPE sxpgcolist-name VALUE 'ZSFTP_UPLOAD',
+      lv_params     TYPE sxpgcolist-parameters,
+      lt_job_output TYPE STANDARD TABLE OF btcxpm,
+      lv_status     TYPE extcmdexex-status,
+      lv_exit_code  TYPE extcmdexex-exitcode.
+
+"------------------------------------------------------------
+" STEP 1: Create data file
+"------------------------------------------------------------
+OPEN DATASET lv_data_file FOR OUTPUT IN TEXT MODE ENCODING DEFAULT.
+IF sy-subrc = 0.
+  TRANSFER 'Line 1: Hello from SAP' TO lv_data_file.
+  TRANSFER 'Line 2: SFTP Batch Test1' TO lv_data_file.
+  CLOSE DATASET lv_data_file.
+  WRITE: / 'Data file created OK'.
+ELSE.
+  WRITE: / 'ERROR creating data file'. EXIT.
+ENDIF.
+
+"------------------------------------------------------------
+" STEP 2: Create SFTP batch file — FIX IS HERE
+" Use string literals directly, no CONCATENATE
+"------------------------------------------------------------
+OPEN DATASET lv_cmd_file FOR OUTPUT IN TEXT MODE ENCODING DEFAULT.
+IF sy-subrc = 0.
+
+  " FIX: Write each command as a pure string literal
+  " No CONCATENATE — avoids spacing/trailing char bugs
+  lv_temp_cmd = 'cd /envio/ordrsp_d96a/'.   " space hardcoded inside string
+  TRANSFER lv_temp_cmd TO lv_cmd_file.
+
+  lv_temp_cmd = 'put /tmp/test_sftp.txt'.    " full path hardcoded, no CONCATENATE
+  TRANSFER lv_temp_cmd TO lv_cmd_file.
+
+  lv_temp_cmd = 'quit'.
+  TRANSFER lv_temp_cmd TO lv_cmd_file.
+
+  CLOSE DATASET lv_cmd_file.
+  WRITE: / 'Batch file created OK'.
+ELSE.
+  WRITE: / 'ERROR creating batch file'. EXIT.
+ENDIF.
+
+"------------------------------------------------------------
+" STEP 3: Build params — NO -i flag (key doesn't exist yet)
+" Using password via sshpass OR just try without key first
+"------------------------------------------------------------
+" NOTE: Since SSH key is missing, remove -i flag entirely
+" SFTP will attempt default auth (may prompt — use sshpass for auto)
+CONCATENATE '-b ' lv_cmd_file
+            ' -o StrictHostKeyChecking=no'
+            ' -o BatchMode=no'
+            ' ftp21864@TEST-WEBCONNECT.SERESNET.COM'
+       INTO lv_params.
+
+WRITE: / 'Params:', lv_params.
+
+"------------------------------------------------------------
+" STEP 4: Execute SFTP
+"------------------------------------------------------------
+CALL FUNCTION 'SXPG_COMMAND_EXECUTE'
+  EXPORTING
+    commandname                   = lv_cmd
+    additional_parameters         = lv_params
+    operatingsystem               = sy-opsys
+  IMPORTING
+    status                        = lv_status
+    exitcode                      = lv_exit_code
+  TABLES
+    exec_protocol                 = lt_job_output
+  EXCEPTIONS
+    no_permission                 = 1
+    command_not_found             = 2
+    parameters_too_long           = 3
+    security_risk                 = 4
+    wrong_check_call_interface    = 5
+    program_start_error           = 6
+    program_termination_error     = 7
+    x_error                       = 8
+    parameter_expected            = 9
+    too_many_parameters           = 10
+    illegal_command               = 11
+    wrong_asynchronous_parameters = 12
+    cant_enqueue_tbtco_entry      = 13
+    jobcount_generation_error     = 14
+    OTHERS                        = 15.
+
+"------------------------------------------------------------
+" STEP 5: Show result
+"------------------------------------------------------------
+WRITE: / '--- Result ---'.
+WRITE: / 'SY-SUBRC  :', sy-subrc.
+WRITE: / 'Status    :', lv_status.
+WRITE: / 'Exit Code :', lv_exit_code.
+WRITE: / '--- Log ---'.
+LOOP AT lt_job_output INTO DATA(ls_log).
+  WRITE: / ls_log-message.
+ENDLOOP.
+
+"------------------------------------------------------------
+" STEP 6: Cleanup
+"------------------------------------------------------------
+DELETE DATASET lv_data_file.
+DELETE DATASET lv_cmd_file.
+
+----------------------------------------------------------------------------------
+Extracted by Direct Download Enterprise version 1.3.1 - E.G.Mellodew. 1998-2005 UK. Sap Release 757
