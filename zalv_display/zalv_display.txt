@@ -1,0 +1,89 @@
+*&---------------------------------------------------------------------*
+*& Report ZALV_DISPLAY
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zalv_display.
+
+"Structure
+TYPES : BEGIN OF ty_data,
+          name    TYPE string,
+          surname TYPE string,
+          mail    TYPE string,
+        END OF ty_data.
+
+"internal table
+DATA : gt_data TYPE STANDARD TABLE OF ty_data.
+
+START-OF-SELECTION.
+  "data
+  APPEND VALUE #( name = 'ADOPH'
+         surname = 'HITLER'
+         mail    = 'AB@HAIL.COM'
+  ) TO gt_data.
+  APPEND VALUE #( name = 'MARTIN'
+      surname = 'LOOTHER'
+      mail    = 'AB@KING.COM'
+) TO gt_data.
+
+
+  "ALV  ABAP List Viewer
+
+  "1 use of FM - REUSE_ALV_GRID_DISPLAY
+  "CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+  "  EXPORTING
+  "    i_callback_program = sy-cprog
+  "    is_layout          = VALUE slis_layout_alv( zebra             = abap_true
+  "                                                colwidth_optimize = abap_true )
+  "    it_fieldcat        = VALUE slis_t_fieldcat_alv( ( fieldname = 'NAME'    seltext_m ='NAME'  )
+  "                                                    ( fieldname = 'SURNAME'    seltext_m = 'SURNAME' )
+  "
+  "                                                    ( fieldname = 'MAIL' seltext_m = 'MAIL' ) )
+  "  TABLES
+  "    t_outtab           = gt_data
+  "  EXCEPTIONS
+  "    program_error      = 1
+  "    OTHERS             = 2.
+
+  "2 USE cl_demo_output=>display()
+  "TRY .
+  "   cl_demo_output=>display( gt_data ).
+  "CATCH cx_root INTO DATA(lo_root).
+  " WRITE lo_root->get_text( ).
+  "ENDTRY.
+
+  "3 USEcl_salv_table
+  DATA: lo_alv TYPE REF TO cl_salv_table.
+
+  TRY .
+      cl_salv_table=>factory(
+       IMPORTING r_salv_table = lo_alv
+      CHANGING  t_table      = gt_data ).
+
+      "Display the output
+      lo_alv->display( ).
+    CATCH cx_root INTO DATA(lo_root).
+      WRITE lo_root->get_text( ).
+
+  ENDTRY.
+
+
+  "
+  "DATA: go_grid      TYPE REF TO cl_gui_alv_grid,
+  "      go_container TYPE REF TO cl_gui_custom_container.
+  "CREATE OBJECT go_container
+  "  EXPORTING
+  "    container_name = 'CC_ALV'. " Name must match Layout in SE51
+  "
+  "" B. Create the ALV Grid inside the Container
+  "CREATE OBJECT go_grid
+  "  EXPORTING
+  "    i_parent = go_container.
+  "go_grid->set_table_for_first_display(
+  "EXPORTING
+  "  i_structure_name = 'TY_DATA' " Uses DDIC structure for catalog
+  "CHANGING
+  "  it_outtab        = gt_data ).
+
+----------------------------------------------------------------------------------
+Extracted by Direct Download Enterprise version 1.3.1 - E.G.Mellodew. 1998-2005 UK. Sap Release 757
