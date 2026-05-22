@@ -1,0 +1,44 @@
+*&---------------------------------------------------------------------*
+*& Include          ZBP_EXTENSION_SCR
+*&---------------------------------------------------------------------*
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  PARAMETERS: p_file TYPE string,
+              p_mode TYPE ctu_mode DEFAULT 'N' MODIF ID mod.
+SELECTION-SCREEN END OF BLOCK b1.
+
+SELECTION-SCREEN SKIP.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-002.
+  PARAMETERS: r_upd TYPE c RADIOBUTTON GROUP g1 USER-COMMAND select,  "Upload File
+              r_dwn TYPE c RADIOBUTTON GROUP g1 .                     "Download Template
+SELECTION-SCREEN END OF BLOCK b2.
+
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN.
+    IF screen-group1 = 'MOD' AND r_dwn = abap_true.
+      screen-active    = '0'.
+      screen-invisible = '1'.
+      MODIFY SCREEN.
+    ENDIF.
+  ENDLOOP.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
+  CALL METHOD cl_rsan_ut_files=>f4
+    EXPORTING
+      i_applserv       = space
+      i_title          = 'PC FILE PATH.......'
+      i_gui_extension  = 'XLS'
+      i_gui_ext_filter = ' '
+    CHANGING
+      c_file_name      = p_file
+    EXCEPTIONS
+      failed           = 1
+      OTHERS           = 2.
+
+  IF sy-subrc NE 0.
+    MESSAGE TEXT-e02 TYPE sy-abcde+4(1).
+  ENDIF.
+
+----------------------------------------------------------------------------------
+Extracted by Direct Download Enterprise version 1.3.1 - E.G.Mellodew. 1998-2005 UK. Sap Release 757

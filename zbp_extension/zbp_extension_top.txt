@@ -1,0 +1,35 @@
+*&---------------------------------------------------------------------*
+*& Include          ZBP_EXTENSION_TOP
+*&---------------------------------------------------------------------*
+"TYPES
+TYPES: BEGIN OF ty_customer_data,
+         kunnr TYPE string, " Customer Number
+         vkorg TYPE string, " Sales Organization
+         vtweg TYPE string, " Distribution Channel
+         spart TYPE string, " Division
+         kalks TYPE string, " Customer Pricing Procedure
+         kdgrp TYPE string, " Customer Group
+         vwerk TYPE string, " Delivering Plant
+         vsbed TYPE string, " Shipping Conditions
+         inco1 TYPE string, " Incoterms (Part 1)
+         inco2 TYPE string, " Incoterms (Part 2)
+         zterm TYPE string, " Terms of Payment
+         ktgrd TYPE string, " Account Assignment Group
+         kvgr1 TYPE string, " Customer Group 1
+         kvgr2 TYPE string, " Customer Group 2
+         kvgr3 TYPE string, " Customer Group 3
+       END OF ty_customer_data,
+       BEGIN OF gty_log,
+         serial_no TYPE String,
+         Customer  TYPE String,
+         message   TYPE String,
+       END OF gty_log.
+
+"DATA  DECLARATION
+DATA:gt_data    TYPE STANDARD TABLE OF ty_customer_data,
+     gt_log     TYPE STANDARD TABLE OF gty_log,
+     gt_bdcdata TYPE STANDARD TABLE OF bdcdata,
+     gt_messtab TYPE STANDARD TABLE OF bdcmsgcoll.
+
+----------------------------------------------------------------------------------
+Extracted by Direct Download Enterprise version 1.3.1 - E.G.Mellodew. 1998-2005 UK. Sap Release 757

@@ -1,0 +1,451 @@
+*&---------------------------------------------------------------------*
+*& Include          ZBP_EXTENSION_SUB
+*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*& Form download_template
+*&---------------------------------------------------------------------*
+*& download_template
+*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+FORM download_template .
+
+  DATA lv_file TYPE string.
+  DATA gt_excel TYPE STANDARD TABLE OF ty_customer_data.
+
+  lv_file = p_file.
+
+  IF p_file IS INITIAL.
+    MESSAGE 'Enter File Path' TYPE sy-abcde+18(1) DISPLAY LIKE sy-abcde+4(1).
+    LEAVE LIST-PROCESSING.
+  ENDIF.
+
+  gt_excel = VALUE #( (
+   kunnr = 'Customer'
+   vkorg = 'Sales_Org'
+   vtweg = 'Dist_Channel'
+   spart = 'Division'
+   kalks =  'Pricing Procedure'
+   kdgrp = 'Customer Group'
+   vwerk = 'Delivery Plant'
+   vsbed = 'Shiping Condition'
+   inco1 = 'Incoterm'
+   inco2 = 'Incoterm2'
+   zterm = 'Payment Term'
+   ktgrd = 'Account assignment group'
+   kvgr1 = 'Customer Grp1'
+   kvgr2 = 'Customer Grp2'
+   kvgr3 = 'Customer Grp3'
+   ) ).
+
+*  Download Excel Template
+  CALL FUNCTION 'GUI_DOWNLOAD'
+    EXPORTING
+      filename                = lv_file
+      filetype                = 'ASC'
+      write_field_separator   = abap_true
+    TABLES
+      data_tab                = gt_excel
+    EXCEPTIONS
+      file_write_error        = 1
+      no_batch                = 2
+      gui_refuse_filetransfer = 3
+      invalid_type            = 4
+      no_authority            = 5
+      unknown_error           = 6
+      header_not_allowed      = 7
+      separator_not_allowed   = 8
+      filesize_not_allowed    = 9
+      header_too_long         = 10
+      dp_error_create         = 11
+      dp_error_send           = 12
+      dp_error_write          = 13
+      unknown_dp_error        = 14
+      access_denied           = 15
+      dp_out_of_memory        = 16
+      disk_full               = 17
+      dp_timeout              = 18
+      file_not_found          = 19
+      dataprovider_exception  = 20
+      control_flush_error     = 21
+      OTHERS                  = 22.
+
+  IF sy-subrc <> 0.
+    MESSAGE TEXT-e02 TYPE sy-abcde+18(1) DISPLAY LIKE sy-abcde+4(1).
+    LEAVE LIST-PROCESSING.
+  ENDIF.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form upload_file_to_itab
+*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+FORM upload_file_to_itab .
+
+  DATA : filename TYPE rlgrap-filename,
+         it_type  TYPE truxs_t_text_data.
+
+  filename = p_file.
+
+
+  IF p_mode <> 'A' AND p_mode <> 'E' AND p_mode <> 'N' AND p_mode <> 'P'.
+    MESSAGE 'Enter Valid Processing Mode (A, E, N, P)' TYPE sy-abcde+18(1) DISPLAY LIKE sy-abcde+4(1).
+    LEAVE LIST-PROCESSING.
+  ENDIF.
+
+  IF p_file IS INITIAL.
+    MESSAGE 'Enter File Path' TYPE sy-abcde+18(1) DISPLAY LIKE sy-abcde+4(1).
+    LEAVE LIST-PROCESSING.
+  ENDIF.
+
+* Uploading the data from the file into the internal table
+  CALL FUNCTION 'TEXT_CONVERT_XLS_TO_SAP'
+    EXPORTING
+      i_line_header        = abap_true
+      i_tab_raw_data       = it_type
+      i_filename           = filename
+    TABLES
+      i_tab_converted_data = gt_data
+    EXCEPTIONS
+      conversion_failed    = 1
+      OTHERS               = 2.
+
+  IF sy-subrc NE 0.
+    MESSAGE TEXT-e02 TYPE sy-abcde+18(1) DISPLAY LIKE sy-abcde+4(1).
+    LEAVE LIST-PROCESSING.
+  ENDIF.
+
+  IF lines( gt_data ) = 0.
+    MESSAGE TEXT-e03 TYPE sy-abcde+18(1) DISPLAY LIKE sy-abcde+4(1).
+    LEAVE LIST-PROCESSING.
+  ENDIF.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form insert_group
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM insert_group .
+
+  LOOP AT gt_data ASSIGNING FIELD-SYMBOL(<fs_data>).
+
+    CLEAR gt_bdcdata.
+
+    PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+          '=SCREEN_1000_OPEN'.
+
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+          'BUS_LOCA_SRCH01-SEARCH_TYPE'.
+
+    PERFORM bdc_field       USING 'BUS_LOCA_SRCH01-SEARCH_TYPE'
+          '1'.
+
+    PERFORM bdc_field       USING 'BUS_LOCA_SRCH01-SEARCH_ID'
+          '1'.
+    PERFORM bdc_field       USING 'BUS_JOEL_SEARCH-PARTNER_NUMBER'
+          '1000000'.
+    PERFORM bdc_field       USING 'BUS_LOCA_SRCH01-MAXHIT'
+          '100'.
+
+    PERFORM bdc_dynpro      USING 'SAPLBUPA_DIALOG_JOEL' '1600'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+          '=BUS_MAIN_ENTER'.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+          'BUS_JOEL_MAIN-OPEN_NUMBER'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-OPEN_NUMBER'
+          <fs_data>-kunnr.
+    PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+          '=SCREEN_1110_CHG_ROLE'.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+          'BUS_JOEL_MAIN-PARTNER_ROLE'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+          'ZCUST X'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_TIMEDEP'
+          '000001'.
+    PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+          '=SCREEN_1000_ACTIVITY'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+          'ZCUST X'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_TIMEDEP'
+          '000001'.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+          'BUS000FLDS-TITLE_MEDI'.
+    PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+          '=SCREEN_1000_MAIN_P03'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+          'ZCUST X'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_TIMEDEP'
+         '000001'.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+          'BUS000FLDS-TITLE_MEDI'.
+    PERFORM bdc_field       USING 'BUS000FLDS-TITLE_MEDI'
+         '0003'.
+    PERFORM bdc_field       USING 'BUT000-NAME_ORG1'
+          'S.PARIKH PHARMA PVT.LTD.'.
+    PERFORM bdc_field       USING 'BUS000FLDS-BU_SORT1_TXT'
+          'C007339'.
+    PERFORM bdc_field       USING 'BUS000FLDS-BU_SORT2_TXT'
+          'S.PARIKH'.
+    PERFORM bdc_field       USING 'ADDR1_DATA-STREET'
+          'UNIT NO.6,1ST FLOOR,HITEX EMBRODARY IND'.
+    PERFORM bdc_field       USING 'ADDR1_DATA-STR_SUPPL3'
+          'ESTATE,VARDHMAN COMPOUND,DAHISAR -'.
+    PERFORM bdc_field       USING 'ADDR1_DATA-LOCATION'
+          'MUMBAI -400068'.
+    PERFORM bdc_field       USING 'ADDR1_DATA-CITY2'
+          'MUMBAI'.
+    PERFORM bdc_field       USING 'ADDR1_DATA-POST_CODE1'
+          '400068'.
+    PERFORM bdc_field       USING 'ADDR1_DATA-CITY1'
+          'DAHISAR EAST'.
+    PERFORM bdc_field       USING 'ADDR1_DATA-COUNTRY'
+          'IN'.
+    PERFORM bdc_field       USING 'ADDR1_DATA-REGION'
+          '27'.
+    PERFORM bdc_field       USING 'ADDR1_DATA-TIME_ZONE'
+          'INDIA'.
+    PERFORM bdc_field       USING 'ADDR1_DATA-LANGU'
+          'EN'.
+    PERFORM bdc_field       USING 'SZA1_D0100-MOB_NUMBER'
+          '9320765200'.
+    PERFORM bdc_field       USING 'SZA1_D0100-SMTP_ADDR'
+          'parikhpharma@gmail.com'.
+    PERFORM bdc_field       USING 'BUS000FLDS-ADDR_VALID_FROM'
+          '16.03.2024'.
+    PERFORM bdc_field       USING 'BUS000FLDS-ADDR_VALID_TO'
+          '31.12.9999'.
+    PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+          '=CVIC_SA_DETAIL'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+             'ZCUST X'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_TIMEDEP'
+             '000001'.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+          <fs_data>-vkorg.
+    PERFORM bdc_dynpro      USING 'SAPLBUSS' '0040'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+          '=CVIC_SA_CREATE'.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+          'CVIS_SALES_AREA_DYNPRO-SALES_ORG(01)'.
+    PERFORM bdc_dynpro      USING 'SAPLBUSS' '0040'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+          '=CVIC_SA_OKAY'.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+          'CVIS_SALES_AREA_DYNPRO-SALES_ORG(01)'.
+    PERFORM bdc_field       USING 'CVIS_SALES_AREA_DYNPRO-SALES_ORG(01)'
+          <fs_data>-vkorg.
+    PERFORM bdc_field       USING 'CVIS_SALES_AREA_DYNPRO-DIST_CHANNEL(01)'
+          <fs_data>-vtweg.
+    PERFORM bdc_field       USING 'CVIS_SALES_AREA_DYNPRO-DIVISION(01)'
+          <fs_data>-spart.
+    PERFORM bdc_field       USING 'CVIS_SALES_AREA_DYNPRO-XMARK(01)'
+          'X'.
+    PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+          '=BUS_MAIN_ENTER'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+          'ZCUST X'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_TIMEDEP'
+          '000001'.
+    PERFORM bdc_field       USING 'GS_KNVV-KDGRP'
+          <fs_data>-kdgrp.
+    PERFORM bdc_field       USING 'GS_KNVV-WAERS'
+          'INR'.
+    PERFORM bdc_field       USING 'GS_KNVV-KURST'
+         ' '.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+          <fs_data>-kalks.
+    PERFORM bdc_field       USING 'GS_KNVV-KALKS'
+          <fs_data>-kalks.
+    PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+          '=SCREEN_1100_TAB_02'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+          'ZCUST X'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_TIMEDEP'
+          '000001'.
+    PERFORM bdc_field       USING 'GS_KNVV-KDGRP'
+          <fs_data>-kdgrp.
+    PERFORM bdc_field       USING 'GS_KNVV-WAERS'
+         'INR'.
+    PERFORM bdc_field       USING 'GS_KNVV-KURST'
+          ' '.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+          'GS_KNVV-KALKS'.
+    PERFORM bdc_field       USING 'GS_KNVV-KALKS'
+         <fs_data>-kalks.
+    PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+          '=SCREEN_1100_TAB_03'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+          'ZCUST X'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_TIMEDEP'
+           '000001'.
+    PERFORM bdc_field       USING 'GS_KNVV-KZAZU'
+         'X'.
+    PERFORM bdc_field       USING 'GS_KNVV-VWERK'
+          <fs_data>-vwerk.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+          <fs_data>-vsbed.
+    PERFORM bdc_field       USING 'GS_KNVV-VSBED'
+          <fs_data>-vsbed.
+    PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+          '=BUS_MAIN_ENTER'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+         'ZCUST X'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_TIMEDEP'
+          '000001'.
+    PERFORM bdc_field       USING 'GS_KNVV-INCO1'
+          <fs_data>-inco1.
+    PERFORM bdc_field       USING 'GS_KNVV-INCO2_L'
+          <fs_data>-inco2.
+    PERFORM bdc_field       USING 'GS_KNVV-ZTERM'
+          <fs_data>-zterm.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+          'GS_KNVV-KTGRD'.
+    PERFORM bdc_field       USING 'GS_KNVV-KTGRD'
+          <fs_data>-ktgrd.
+    PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+          '=BUS_MAIN_SAVE'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+          'ZCUST X'.
+    PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_TIMEDEP'
+          '000001'.
+    PERFORM bdc_field       USING 'GS_KNVV-INCO1'
+          <fs_data>-inco1.
+    PERFORM bdc_field       USING 'GS_KNVV-INCO2_L'
+          <fs_data>-inco2.
+    PERFORM bdc_field       USING 'GS_KNVV-ZTERM'
+          <fs_data>-zterm.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+          'GS_KNVV-KTGRD'.
+    PERFORM bdc_field       USING 'GS_KNVV-KTGRD'
+         <fs_data>-ktgrd.
+    PERFORM bdc_dynpro      USING 'SAPLSPO1' '0600'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+          '=OPT2'.
+
+    PERFORM bdc_transaction USING 'BP'.
+
+    PERFORM fill_alv USING <fs_data>.
+
+    UNASSIGN <fs_data>.
+
+  ENDLOOP.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form fill_alv
+*&---------------------------------------------------------------------*
+*& fill_alv
+*&---------------------------------------------------------------------*
+*&      --> LS_EXCEL
+*&---------------------------------------------------------------------*
+FORM fill_alv USING im_excel TYPE ty_customer_data.
+
+  DATA lv_message(100) TYPE c.
+
+  LOOP AT gt_messtab INTO DATA(ls_messtab).
+
+    CALL FUNCTION 'FORMAT_MESSAGE'
+      EXPORTING
+        id        = ls_messtab-msgid
+        lang      = sy-langu
+        no        = ls_messtab-msgnr
+        v1        = ls_messtab-msgv1
+        v2        = ls_messtab-msgv2
+        v3        = ls_messtab-msgv3
+        v4        = ls_messtab-msgv4
+      IMPORTING
+        msg       = lv_message
+      EXCEPTIONS
+        not_found = 1
+        OTHERS    = 2.
+
+    IF sy-subrc = 0.
+
+      APPEND VALUE #( serial_no    = 1
+         Customer = im_excel-kunnr
+      message      = lv_message
+      ) TO gt_log.
+
+      CLEAR lv_message.
+
+    ENDIF.
+
+  ENDLOOP.
+
+  CLEAR: gt_bdcdata,
+  gt_messtab.
+
+ENDFORM.
+FORM bdc_dynpro USING program TYPE bdcdata-program
+      dynpro  TYPE bdcdata-dynpro.
+
+  gt_bdcdata = VALUE #( BASE gt_bdcdata ( program  = program
+  dynpro   = dynpro
+  dynbegin = abap_true ) ).
+
+ENDFORM.
+FORM bdc_field USING fnam TYPE any
+      fval TYPE any.
+
+  gt_bdcdata = VALUE #( BASE gt_bdcdata ( fnam = fnam
+  fval = fval ) ).
+
+ENDFORM.
+FORM bdc_transaction USING tcode TYPE tcode.
+
+  DATA(ls_options) = VALUE ctu_params( dismode = p_mode       "Screen Mode
+        updmode = 'A'          "Asynchronous
+        defsize = abap_true
+        nobinpt = abap_true ).
+
+  CALL TRANSACTION tcode USING gt_bdcdata
+        OPTIONS FROM ls_options
+        MESSAGES INTO gt_messtab.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form display_alv
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_alv .
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = sy-cprog
+      is_layout          = VALUE slis_layout_alv( zebra = abap_true colwidth_optimize = abap_true )
+      it_fieldcat        = VALUE slis_t_fieldcat_alv( ( fieldname = 'SERIAL_NO'    seltext_m = 'Serial No.'     emphasize = 'C100' )
+      ( fieldname = 'CUSTOMER'     seltext_m = 'Customer' )
+      ( fieldname = 'MESSAGE'      seltext_m = 'Status Message' emphasize = 'C300' ) )
+    TABLES
+      t_outtab           = gt_log
+    EXCEPTIONS
+      program_error      = 1
+      OTHERS             = 2.
+
+  IF sy-subrc NE 0.
+    MESSAGE TEXT-e04 TYPE sy-abcde+18(1) DISPLAY LIKE sy-abcde+4(1).
+    LEAVE LIST-PROCESSING.
+  ENDIF.
+
+ENDFORM.
+
+----------------------------------------------------------------------------------
+Extracted by Direct Download Enterprise version 1.3.1 - E.G.Mellodew. 1998-2005 UK. Sap Release 757
